@@ -109,6 +109,7 @@ library(gplots)
 library(ggplot2)
 library(rmarkdown)
 library(tinytex)
+library(Hmisc)
 ```
 
 ### Summary (mean, max, min, sd) of the average housing sale price by 17 Regions

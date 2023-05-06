@@ -1982,22 +1982,22 @@ FE 6
 Treatment
 </td>
 <td style="text-align:center;">
-234.924\*\*\*
+234.924***
 </td>
 <td style="text-align:center;">
-161.005\*\*\*
+161.005***
 </td>
 <td style="text-align:center;">
-159.800\*\*
+159.800**
 </td>
 <td style="text-align:center;">
-155.334\*\*
+155.334**
 </td>
 <td style="text-align:center;">
-142.237\*\*
+142.237**
 </td>
 <td style="text-align:center;">
-174.187\*\*\*
+174.187***
 </td>
 </tr>
 <tr>
