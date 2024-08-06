@@ -1,0 +1,287 @@
+---
+title: 'South Korea Housing Price Policy Analysis'
+author: 'Myung Eun Hyeon (mh4185), Sujin Hong (sh4076)'
+date: '`r Sys.Date()`'
+output:
+  ioslides_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Research Question and Motivation
+<div class="blue"> Research Question </div> What were the impacts of the tightened mortgage policy and the increase in comprehensive real estate tax applied to multiple homeowners on Korean housing prices?
+
+<div class="blue"> Housing Price Context </div>
+
+- 24 housing policy changes during President Moon's 5-year term
+
+- Regulate purchase of apartments for investment purposes
+
+- Housing prices soared i.e. 52 percent increase in apartment prices in Seoul
+
+## Research Context
+<div class="blue"> Mortgage Loan Policy Context </div>
+* Regulations on the mortgage loan in some regions were strengthened in 2017 
+
+<font size ="3">
+ - For 5 regions subject to adjustment, LTV (Loan-To-Value) and DTI (Debt-to-Income) ratio decreased by 10%p, while for other 12 regions there was no policy change. 
+</font size> 
+
+<div class="blue"> Comprehensive Real Estate Tax Context </div>
+- National tax on land and residential properties
+- First introduced in 2005 to slow the 22% increase in housing prices by targeting owners with properties that have high appraised value or multiple homeowners
+- Remained at an average of 1.15% from 2009 to 2018. Since then, increased to 2019: 1.35%, 2021: 3.66%
+
+## Data Description and Sources
+<div class="blue"> Data Source </div> All data was derived from Korean Statistical Information Service (kosis.kr), excluding Comprehensive Real Estate Tax Rate from National Tax Service (nts.go.kr)
+
+<div class="blue"> Data Description </div>
+- Average Housing Sale Price: Unit of observation = individual apartment sale prices, Population = all saleable apartments, houses, and townhouses of 261 cities, counties, and districts of South Korea
+- Bank of Korea Policy Rate
+- Average Monthly Income: Unit of observation = individual monthly income, Pouplation = every worker that received income in exchange for labor of 261 cities, counties, and districts of South Korea
+
+## Methodology: Empirical Strategy
+<div class="blue"> Empirical Strategy </div>
+
+<div> Loan regulation: Cross-sectional and panel data analysis </div>
+
+<font size ="4">
+
+Cross-sectional: non-adjusted v. adjusted regions after policy change
+
+Diff-in-diff: non-adjusted v. adjusted regions before/after policy change
+
+FE model: See the effect of the implementation of stronger regulation on adjusted regions on housing price, controlling for region(time-variant but constant across regions, e.g. interest rate, national-level macro economic indexes such as inflation rate) and time fixed (vary across regions, but consistent over time, e.g. demographic features and demand for housing) effects. </font size>
+
+<div>Comprehensive Real Estate Tax (CRET) Rate increase: OLS </div>
+<font size ="4">
+
+OLS: see variation in average housing sale prices after policy change of increasing the CRET rate to both adjustment and non-adjustment areas (at different levels) was implemented</font size>
+
+## Methodology: Key Explanatory and Dependent Variables
+<div class="blue"> Definition </div>
+- Dependent variable = Average Housing Sale Price of each month in each region (2012~2022.Sep.)
+- Explanatory variable 1 = CRET Rate, defined as the average of the different tax rates imposed on residential properties based on appraised value, applied equally across regions until 2021 when adjustment regions were introduced
+- Explanatory variable 2 = Treatment, defined as a binary variable indicating if the region is subject to strengthened LTV, DTI ratio or not(0: all regions before policy change & non-adjusted regions after policy change / 1: adjusted regions after policy change )
+
+## Dependent Variable : Average Housing Price by Region
+
+This map shows the average housing sale price by region. Seoul has the highest average price, followed by the outskirts of Seoul.
+
+## <font color ="green"> Explanatory Variable 1: Tax Rate and Housing Price </font color>
+
+## OLS regression 
+```{r preprocessing 0, echo=FALSE, results='asis', out.width="70%"}
+#load library
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(lmtest)
+library(sandwich)
+library(stringr)
+library(ggrepel)
+library(fixest)
+library(modelsummary)
+library(stargazer)
+library(latexpdf)
+
+#load dataset
+avgprice <- read.csv("/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Monthly_Average_Sale_Price.csv")
+
+year <- c("Before 2018", "2019 and after", "2021 and after")
+rate <- c(1.15, 1.38, 1.77)
+
+ratetable <- data.frame(year, rate)
+
+year <- c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+rate <- c(1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.38, 1.38, 1.77, 1.77)
+
+taxrate <- data.frame(year, rate)
+
+#basic data management
+names(avgprice)=str_sub(names(avgprice), 2)
+colnames(avgprice)[colnames(avgprice) == 'egion'] <- 'Region'
+
+avgprice_long <- avgprice %>% 
+  pivot_longer(!Region,
+               names_to = "month",
+               names_transform = list(month = as.character),
+               values_to = "avg_price",
+               values_transform = list(avg_price = as.integer))
+#-Note that the price is in 1,000 won.
+
+avgprice_main <- avgprice_long %>% 
+  mutate(avg_price = str_replace_all(avg_price, ",", "")) %>% 
+  mutate(month.num = as.numeric(month),
+         avgprice.num = as.numeric(avg_price))
+
+#data management: separating year and month
+avgprice_main$year = substr(avgprice_main$month, 1, 4)
+avgprice_main$month = str_sub(avgprice_main$month, -2)
+
+avgprice_groupby <- avgprice_main %>% 
+  group_by(Region, year) %>% 
+  summarize(mean_avgprice = mean(avgprice.num, na.rm=TRUE))
+
+avgprice_groupby <- avgprice_groupby %>% 
+  mutate(year.num = as.numeric(year))
+taxrate <- taxrate %>% 
+  mutate(year.num = as.numeric(year))
+
+#joining tax rate with average housing price
+avgprice_join <- left_join(avgprice_groupby, taxrate, by = c("year.num"))
+
+#Assign tax rate for adjustment area after 2021: t = 3.66%
+#Adjustment areas: Seoul, Gyeonggi, Incheon, Sejong, and Daejeon
+year.num <- c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+rate <- c(1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 1.38, 1.38, 3.66, 3.66)
+adjustment <- data.frame(year.num, rate)
+
+#joining tax rate for adjustment areas
+avgprice_adj <- avgprice_join %>% 
+  mutate(adjustment = ifelse(Region == "Seoul" | Region == "Gyeonggi" | Region == "Incheon" | Region == "Sejong" | Region == "Daejeon", 1, 0))
+
+avgprice_df <- avgprice_adj %>% 
+  mutate(rate = ifelse(adjustment == 1 & year.num > 2020, yes = 3.66, no = avgprice_adj$rate))
+
+
+# Introducing Control Variables
+policy_rate <- read.csv("/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/BoK_Base_Rate.csv")
+
+#set up policy rate
+names(policy_rate) = str_sub(names(policy_rate), 2)
+colnames(policy_rate)[1] <- "rates"
+
+policy_long <- policy_rate %>% 
+  pivot_longer(cols =! "rates",
+               names_to = "year",
+               values_to = "interest") %>% 
+  filter(rates == "Base Rate")
+
+#set up average income
+avgincome <- read.csv("/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Average_Income.csv")
+
+names(avgincome) <- gsub(".", " ", names(avgincome), fixed = TRUE)
+
+colnames(avgincome)[4] <- "AvgMonthlyIncome"
+
+avgincome_long <- avgincome %>% 
+  select("Time", "AvgMonthlyIncome")
+
+colnames(avgincome_long)[1] <- "year"
+
+#create combined data frame
+avgincome_long <- avgincome_long %>% 
+  mutate(year.num = as.numeric(year))
+policy_long <- policy_long %>% 
+  mutate(year.num = as.numeric(year))
+
+control <- left_join(avgincome_long, policy_long, by = "year.num")
+
+avgprice_control <- left_join(avgprice_df, control, by = "year.num", na.rm=TRUE)
+
+#Regression table
+ols <- lm(mean_avgprice ~ rate, data = avgprice_control)
+ols1 <- lm(mean_avgprice ~ rate + AvgMonthlyIncome, data = avgprice_control)
+ols2 <- lm(mean_avgprice ~ rate + AvgMonthlyIncome + interest, data = avgprice_control)
+stargazer::stargazer(ols, ols1, ols2, type = "html", title = "Effect of CRET Rate Increase on Average Housing Sale Prices",  dep.var.labels = "Average Housing Sale Price", covariate.labels = c("CRET Rate", "Average Monthly Income", "BoK Policy Rate", no.space=TRUE))
+```
+
+#PRF Equations
+$$AvgHousingSalePrice = \beta_0 + \beta_1CRETrate + \mu$$
+$$AvgHousingSalePrice = \beta_0 + \beta_1CRETrate + \beta_2AvgMonthlyIncome + \mu$$
+$$AvgHousingSalePrice = \beta_0 + \beta_1CRETrate + \beta_2AvgMonthlyIncome + \beta_3BoKPolicyRate + \mu$$
+$$AvgHousingSalePrice = \beta_0 + \beta_1CRETrate + regionFE + \mu$$
+
+#First Map: Average Housing Price per Region
+```{r out.width = "80%", echo = FALSE, fig.align = "center"}
+library(sf)
+library(ggplot2)
+library(tidyverse)
+library(tmap)
+
+skorea <- st_read(dsn = "/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/gadm36_KOR_shp/gadm36_KOR_1.shp")
+
+mapavg <- avgprice_control %>% 
+  select(Region, mean_avgprice)
+
+to <- c("Chungbuk", "Chungnam", "Gangwon", "Gyeonggi", "Gyeongbuk", "Gyeongnam", "Jeonbuk", "Jeonnam")
+
+from <- c("Chungcheongbuk-do", "Chungcheongnam-do", "Gangwon-do", "Gyeonggi-do", "Gyeongsangbuk-do", "Gyeongsangnam-do", "Jeollabuk-do", "Jeollanam-do")
+
+skorea$NAME_1 <- plyr::mapvalues(skorea$NAME_1, from = from, to = to)
+
+colnames(skorea)[colnames(skorea) == "NAME_1"] <- 'Region'
+
+mapdata <- inner_join(skorea, avgprice_control, by = "Region")
+
+tm_shape(mapdata) +
+  tm_polygons("mean_avgprice", id = "Region", palette = "Greens")
+```
+
+```{r out.width = "80%", echo = FALSE, fig.align = "center"}
+knitr::include_graphics("/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/images/skorea.png")
+```
+
+#Second Map: Average Housing Price Treatment vs Non-Treatment
+```{r}
+avgprice_main_total <- avgprice_main %>%
+  mutate(adjustment = ifelse(Region == "Seoul"|Region == "Gyeonggi"|Region == "Incheon"|Region == "Sejong"|Region == "Daejeon"|Region == "Sejong", 1, 0)) %>%
+  mutate(policy = ifelse(year>=2018 | month.num =="2017.12" | month.num == "2017.11" | month.num == "2017.10"|
+                           month.num =="2017.09" | month.num == "2017.08"| month.num == "2017.07", 1, 0)) %>%
+  select(Region, year, month.num, adjustment, policy, avgprice.num)
+
+map2data <- inner_join(skorea, avgprice_main_total, by = "Region")
+
+tm_shape(map2data) +
+  tm_polygons("adjustment", id = "Region", palette = "Reds")
+```
+
+```{r out.width = "80%", echo = FALSE, fig.align = "center"}
+knitr::include_graphics("/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/images/map_adjustment.png")
+```
+
+## <font color ="green">  Explanatory Variable 2: Loan Regulation and Housing Price </font color>
+
+## The Trend of Panel data (Region-year.month data)
+```{r preprocessing 3, echo=FALSE, out.width="75%"}
+diffggplot <- readRDS(file = "/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/diffggplot.rds")
+diffggplot
+```
+
+## Cross-sectional analysis
+<div> Housing_price= b0 + b1x(a dummy for adjustment) + b2x(interest_rate) + b3x(average_monthly_income)+error</div> 
+```{r preprocessing 4, echo=FALSE, out.width="10%", out.height="10%"}
+ols_cross2 <- readRDS(file = "/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/ols_cross2.rds")
+ols_cross2
+```
+
+## Diff-in-diff 
+
+<div>Housing_price = b0 + b1x(adjustment) + b2x(policy) + b3x(adjustmentxpolicy) + error </div>
+```{r preprocessing 5, echo=FALSE, out.height="10%", out.width="10%"}
+avgprice_main_total <- avgprice_main %>%
+  mutate(adjustment = ifelse(Region == "Seoul"|Region == "Gyeonggi"|Region == "Incheon"|Region == "Sejong"|Region == "Daejeon"|Region == "Sejong", 1, 0)) %>%
+  mutate(policy = ifelse(year>=2018 | month.num =="2017.12" | month.num == "2017.11" | month.num == "2017.10"|
+                           month.num =="2017.09" | month.num == "2017.08"| month.num == "2017.07", 1, 0)) %>%
+  select(Region, year, month.num, adjustment, policy, avgprice.num)
+
+
+avgprice_main_total_did <- avgprice_main_total %>%
+  mutate(adjustment_policy = adjustment*policy)
+
+ols_did <- lm(avgprice.num ~ adjustment_policy + adjustment + policy, data = avgprice_main_total_did)
+coeftest(ols_did, vcov = vcovHC(ols_did, type = "HC1"))
+```
+<div class="blue"> Interpretation </div>
+<font size = "3"> - The gap between the adjusted and non-adjusted regions after policy implementation is greater by 129,416 thousand won, compared to the gap between regions before the policy implementation. This suggests that the implementation of the loan regulation increases the housing price. </font size>
+
+## FE analysis 
+Housing_price = be0+ bx(treatment) + regionFE + timeFE + error
+
+```{r preprocessing 6, echo=FALSE, out.width="30%"}
+models_fe_sum2 <- readRDS(file = "/Users/Kate/Desktop/2022-2023/U6614/Assignments/Group Project/Final Presentation/models_fe_sum2.rds")
+models_fe_sum2
+```
